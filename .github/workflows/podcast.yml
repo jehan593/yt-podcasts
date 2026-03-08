@@ -7,7 +7,6 @@ on:
 permissions:
   contents: write
   pages: write
-  id-token: write
 
 jobs:
   update:
@@ -17,13 +16,40 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Generate Podcast RSS
-        uses: amandine-piazza/github-releases-to-podcast-rss@v1
-        with:
-          repo: "${{ github.repository }}"
-          title: "My YouTube Audio"
-          description: "Audio archived via Termux"
-          image: "https://github.com/${{ github.repository_owner }}.png"
-          output: "podcast.xml"
+        shell: python
+        run: |
+          import os
+          import json
+          import requests
+          from xml.etree.ElementTree import Element, SubElement, tostring
+
+          REPO = "${{ github.repository }}"
+          url = f"https://api.github.com/repos/{REPO}/releases"
+          releases = requests.get(url).json()
+
+          rss = Element('rss', version='2.0', attrib={'xmlns:itunes': 'http://www.itunes.com/dtds/podcast-1.0.dtd'})
+          channel = SubElement(rss, 'channel')
+          SubElement(channel, 'title').text = "My YouTube Audio"
+          SubElement(channel, 'description').text = "Audio archived via Termux"
+          SubElement(channel, 'link').text = f"https://github.com/{REPO}"
+          SubElement(channel, 'language').text = 'en-us'
+
+          for rel in releases:
+              for asset in rel.get('assets', []):
+                  if asset['name'].endswith('.mp3'):
+                      item = SubElement(channel, 'item')
+                      SubElement(item, 'title').text = rel.get('name', 'Untitled')
+                      SubElement(item, 'pubDate').text = rel.get('published_at')
+                      SubElement(item, 'guid').text = asset['browser_download_url']
+                      # This tag is the secret to the Play button:
+                      SubElement(item, 'enclosure', {
+                          'url': asset['browser_download_url'],
+                          'type': 'audio/mpeg',
+                          'length': str(asset['size'])
+                      })
+
+          with open('podcast.xml', 'wb') as f:
+              f.write(b'<?xml version="1.0" encoding="UTF-8"?>' + tostring(rss))
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
