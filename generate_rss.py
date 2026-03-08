@@ -1,13 +1,12 @@
 import os
-import json
-import datetime
-from xml.etree.ElementTree import Element, SubElement, TOString, ElementTree
+import requests
+from xml.etree.ElementTree import Element, SubElement, tostring
 
 # CONFIGURATION
 REPO_OWNER = "jehan593"
 REPO_NAME = "yt-podcasts"
-BASE_URL = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download"
 
+# 1. Setup RSS structure
 rss = Element('rss', version='2.0', attrib={'xmlns:itunes': 'http://www.itunes.com/dtds/podcast-1.0.dtd'})
 channel = SubElement(rss, 'channel')
 
@@ -16,21 +15,25 @@ SubElement(channel, 'description').text = "YouTube audio archived via Termux"
 SubElement(channel, 'link').text = f"https://github.com/{REPO_OWNER}/{REPO_NAME}"
 SubElement(channel, 'language').text = 'en-us'
 
-# Fetch releases from GitHub API (or use a local cache)
-# For simplicity, we'll assume the action provides a list of releases
-import requests
+# 2. Fetch releases from GitHub API
 url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases"
-releases = requests.get(url).json()
+response = requests.get(url)
+releases = response.json()
 
+# 3. Build items from assets
 for release in releases:
-    for asset in release['assets']:
+    for asset in release.get('assets', []):
         if asset['name'].endswith('.mp3'):
             item = SubElement(channel, 'item')
-            SubElement(item, 'title').text = release['name']
-            SubElement(item, 'pubDate').text = release['published_at']
-            SubElement(item, 'enclosure', url=asset['browser_download_url'], type='audio/mpeg', length=str(asset['size']))
+            SubElement(item, 'title').text = release.get('name', 'Untitled Episode')
+            SubElement(item, 'pubDate').text = release.get('published_at')
+            SubElement(item, 'enclosure', {
+                'url': asset['browser_download_url'],
+                'type': 'audio/mpeg',
+                'length': str(asset['size'])
+            })
             SubElement(item, 'guid').text = asset['browser_download_url']
 
-# Save the file
+# 4. Save the file with the correct 'tostring' call
 with open('podcast.xml', 'wb') as f:
-    f.write(b'<?xml version="1.0" encoding="UTF-8"?>' + TOString(rss))
+    f.write(b'<?xml version="1.0" encoding="UTF-8"?>' + tostring(rss))
